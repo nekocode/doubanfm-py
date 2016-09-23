@@ -1,10 +1,16 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
 import subprocess
 import requests
-import json
 import urwid
 import random
+
+
+try:
+    input = raw_input
+except NameError:
+    pass
 
 
 class Song(object):
@@ -92,22 +98,17 @@ class DoubanFMApi:
     def __init__(self):
         self.auth = None
 
-    @staticmethod
-    def decode_json(response):
-        return json.loads(bytes.decode(response))
-
     def login(self, email, password):
-        req = requests.post('%s/service/auth2/token' % DoubanFMApi.TOKEN_HOST_URL, data={
+        rsp = requests.post('%s/service/auth2/token' % DoubanFMApi.TOKEN_HOST_URL, data={
             'username': email,
             'password': password,
             'client_id': DoubanFMApi.KEY,
             'client_secret': DoubanFMApi.SECRET,
             'grant_type': 'password',
             'apikey': DoubanFMApi.KEY,
-        })
+        }).json()
 
-        rlt = DoubanFMApi.decode_json(req.content)
-        self.auth = "Bearer %s" % rlt['access_token']
+        self.auth = "Bearer %s" % rsp['access_token']
 
     def get_redheart_songs(self):
         if self.auth is None:
@@ -115,12 +116,10 @@ class DoubanFMApi:
 
         auth_header = {'Authorization': self.auth}
 
-        req = requests.get('%s/v2/fm/redheart/basic' % DoubanFMApi.API_HOST_URL, params={
+        rsp = requests.get('%s/v2/fm/redheart/basic' % DoubanFMApi.API_HOST_URL, params={
             'app_name': DoubanFMApi.APP_NAME,
             'version': DoubanFMApi.VERSION,
-        }, headers=auth_header)
-
-        rsp = DoubanFMApi.decode_json(req.content)
+        }, headers=auth_header).json()
 
         sids = ""
         for sid in rsp['songs']:
@@ -129,15 +128,14 @@ class DoubanFMApi:
 
         sids = sids[:-1]
 
-        req = requests.post('%s/v2/fm/songs' % DoubanFMApi.API_HOST_URL, data={
+        rsp = requests.post('%s/v2/fm/songs' % DoubanFMApi.API_HOST_URL, data={
             'sids': sids,
             'kbps': '128',
             'app_name': DoubanFMApi.APP_NAME,
             'version': DoubanFMApi.VERSION,
             'apikey': DoubanFMApi.KEY,
-        }, headers=auth_header)
+        }, headers=auth_header).json()
 
-        rsp = DoubanFMApi.decode_json(req.content)
         return list(map(Song.parse, rsp))
 
 

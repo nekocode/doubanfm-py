@@ -7,5 +7,10 @@
 - [mplayer](http://mplayerhq.hu/design7/news.html)
 - [mpv](http://mpv.io/)
 
+#### 运行方式
+```
+./fm.py
+```
+
 ## 程式截图
 ![](art/screenshot.png)

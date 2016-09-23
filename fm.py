@@ -112,7 +112,7 @@ class DoubanFMApi:
 
     def get_redheart_songs(self):
         if self.auth is None:
-            return
+            return []
 
         auth_header = {'Authorization': self.auth}
 
@@ -140,49 +140,37 @@ class DoubanFMApi:
 
 
 class SongButton(urwid.Button):
-    LAST_PRESSED_BTN = None
-
-    def __init__(self, song, on_pressed_callback):
-        self.on_pressed_callback = on_pressed_callback
-        super(SongButton, self).__init__('', self._on_pressed, song)
+    def __init__(self, song, on_pressed_callback, index=0):
+        super(SongButton, self).__init__('', on_pressed_callback)
+        self.index = index
+        self.song = song
+        self.is_playing = False
 
         self._text = urwid.SelectableIcon(
-            u'\N{BULLET} ' + song.title + ' - ' + song.artist,
+            u'• %s - %s' % (song.title, song.artist),
             cursor_position=0)
         self._w = urwid.AttrMap(self._text, None, focus_map='reversed')
+        self.set_is_playing(self.is_playing)
 
-    @property
-    def text(self):
-        return self._text.text
+    # 设置按钮播放状态
+    def set_is_playing(self, is_playing):
+        self.is_playing = is_playing
 
-    def set_text(self, text):
-        self._text.set_text(text)
-
-    def set_attr_map(self, attr_map):
-        self._w.set_attr_map(attr_map)
+        if is_playing:
+            self._text.set_text(u'♫' + self._text.text[1:])
+            self._w.set_attr_map({None: 'playing'})
+        else:
+            self._text.set_text(u'•' + self._text.text[1:])
+            self._w.set_attr_map({'playing': None})
 
     def mouse_event(self, size, event, button, x, y, focus):
         # 屏蔽鼠标点击
         pass
 
-    def _on_pressed(self, button, song):
-        # 按下按钮后, 改变按钮外观
-        if SongButton.LAST_PRESSED_BTN is not None:
-            SongButton.LAST_PRESSED_BTN.set_text(u'\N{BULLET}' + SongButton.LAST_PRESSED_BTN.text[1:])
-            SongButton.LAST_PRESSED_BTN.set_attr_map({'playing': None})
-
-        self.set_text(u'♫' + self.text[1:])
-        self.set_attr_map({None: 'playing'})
-
-        self.on_pressed_callback(button, song)
-        SongButton.LAST_PRESSED_BTN = self
-
 
 class SongListBox(urwid.ListBox):
-    def __init__(self, songs, on_item_pressed_callback):
-        super(SongListBox, self).__init__(urwid.SimpleFocusListWalker(
-            [SongButton(song, on_item_pressed_callback) for song in songs]
-        ))
+    def __init__(self, btns):
+        super(SongListBox, self).__init__(urwid.SimpleFocusListWalker(btns))
 
         self._command_map['j'] = 'cursor down'
         self._command_map['k'] = 'cursor up'
@@ -195,9 +183,9 @@ class SongListBox(urwid.ListBox):
             # 发送退出信号
             urwid.emit_signal(self, 'exit')
 
-        if key in ('p', 'P'):
-            # 暂停/继续播放
-            urwid.emit_signal(self, 'pause_or_play')
+        if key in ('s', 'S'):
+            # 停止播放
+            urwid.emit_signal(self, 'stop')
 
         if key in ('left', 'right'):
             # 下一首歌曲
@@ -209,10 +197,17 @@ class SongListBox(urwid.ListBox):
 
 
 class UI:
+    LOOP_MODE = {
+        0: u'单曲循环',
+        1: u'全部循环',
+        2: u'随机播放',
+    }
+
     def __init__(self):
         self.player = Player()
-        self.songs = []
-        self.playing_song = None
+        self.btns = []
+        self.playing_btn = None
+        self.loop_mode = 0
         self.next_song_alarm = None
         self.main = None
 
@@ -221,6 +216,8 @@ class UI:
             ('reversed', '', '', '', 'standout', ''),
             ('playing', '', '', '', 'bold, g7', '#d06'),
             ('title', '', '', '', 'bold, g7', '#d06'),
+            ('loop_mode', '', '', '', 'bold, g7', '#d06'),
+            ('red', '', '', '', 'bold, #d06', ''),
         ]
 
         self._setup_ui()
@@ -231,15 +228,20 @@ class UI:
 
         api = DoubanFMApi()
         api.login(email, password)
-        self.songs = api.get_redheart_songs()
+        songs = api.get_redheart_songs()
 
         # 头部
-        title = urwid.Text(('title', ' ❤ 豆瓣 FM 红心歌曲 '))
+        self.title = urwid.Text('')
+        self._update_title()
         divider = urwid.Divider()
-        header = urwid.Padding(urwid.Pile([divider, title, divider]), left=4, right=4)
+        header = urwid.Padding(urwid.Pile([divider, self.title, divider]), left=4, right=4)
 
         # 歌曲列表
-        self.song_listbox = SongListBox(self.songs, self._on_item_pressed)
+        index = 0
+        for song in songs:
+            self.btns.append(SongButton(song, self._on_item_pressed, index))
+            index += 1
+        self.song_listbox = SongListBox(self.btns)
 
         # 页面
         self.main = urwid.Padding(
@@ -248,51 +250,89 @@ class UI:
 
         # 注册信号回调
         urwid.register_signal(
-            SongListBox, ['exit', 'pause_or_play', 'next_song', 'change_mode'])
+            SongListBox, ['exit', 'stop', 'next_song', 'change_mode'])
         urwid.connect_signal(self.song_listbox, 'exit', self._on_exit)
-        urwid.connect_signal(self.song_listbox, 'pause_or_play', self._on_exit)
-        urwid.connect_signal(self.song_listbox, 'next_song', self.next_song())
-        urwid.connect_signal(self.song_listbox, 'change_mode', self.change_mode())
+        urwid.connect_signal(self.song_listbox, 'stop', self.stop_song)
+        urwid.connect_signal(self.song_listbox, 'next_song', self.next_song)
+        urwid.connect_signal(self.song_listbox, 'change_mode', self.change_mode)
 
         self.loop = urwid.MainLoop(self.main, palette=self.palette)
         self.loop.screen.set_terminal_properties(colors=256)
 
-    def run(self):
-        self.loop.run()
+    def _update_title(self):
+        text = [
+            ('title', u' ❤ 豆瓣 FM 红心歌曲 '),
+            ('red', u'   LOOP: '),
+            ('loop_mode', u'%s' % UI.LOOP_MODE[self.loop_mode]),
+        ]
 
-    def pause_or_play(self):
-        # todo
-        pass
+        if self.playing_btn is not None:
+            playing_song = self.playing_btn.song
+            text.extend([
+                ('red', u'\n♫ %s - %s' % (playing_song.title, playing_song.artist)),
+            ])
 
-    def next_song(self):
-        # todo
-        pass
+        self.title.set_text(text)
 
-    def change_mode(self):
-        # todo
-        pass
+    def stop_song(self):
+        if self.playing_btn is not None:
+            self.playing_btn.set_is_playing(False)
+        self.playing_btn = None
 
-    def play(self, song):
-        self.player.play(song)
-        self.playing_song = song
-
-        # 循环播放
-        def next_song_alarm_handler(loop, user_data):
-            self.play(self.playing_song)
+        self.player.stop()
+        self._update_title()
 
         if self.next_song_alarm is not None:
             self.loop.remove_alarm(self.next_song_alarm)
 
-        self.next_song_alarm = self.loop.set_alarm_in(
-            self.playing_song.length_in_sec,
-            next_song_alarm_handler, None)
+    def next_song(self):
+        # 单曲循环
+        if self.loop_mode == 0:
+            self._on_item_pressed(self.playing_btn)
+        # 全部循环
+        elif self.loop_mode == 1:
+            index = self.playing_btn.index + 1
+            if index >= len(self.btns):
+                index = 0
+            next_song_btn = self.btns[index]
+            self._on_item_pressed(next_song_btn)
+        # 随机播放
+        elif self.loop_mode == 2:
+            next_song_btn = self.btns[random.randint(0, len(self.btns) - 1)]
+            self._on_item_pressed(next_song_btn)
 
-    def _on_item_pressed(self, button, song):
-        self.play(song)
+    def change_mode(self):
+        if self.loop_mode < 2:
+            self.loop_mode += 1
+        else:
+            self.loop_mode = 0
+
+        self._update_title()
+
+    def _on_item_pressed(self, button):
+        if self.playing_btn is not None:
+            self.playing_btn.set_is_playing(False)
+        self.playing_btn = button
+        self.playing_btn.set_is_playing(True)
+
+        playing_song = self.playing_btn.song
+        self.player.play(playing_song)
+        self._update_title()
+
+        # 循环播放定时设置
+        if self.next_song_alarm is not None:
+            self.loop.remove_alarm(self.next_song_alarm)
+
+        self.next_song_alarm = self.loop.set_alarm_in(
+            playing_song.length_in_sec,
+            lambda loop, data: self.next_song(), None)
 
     def _on_exit(self):
         self.player.stop()
         raise urwid.ExitMainLoop()
+
+    def run(self):
+        self.loop.run()
 
 
 if __name__ == '__main__':

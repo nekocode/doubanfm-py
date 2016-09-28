@@ -4,6 +4,7 @@ import os
 import subprocess
 import requests
 import urwid
+import uuid
 import random
 
 
@@ -94,6 +95,8 @@ class DoubanFMApi:
     VERSION = "642"
     KEY = "02f7751a55066bcb08e65f4eff134361"
     SECRET = "63cf04ebd7b0ff3b"
+    UUID = '408428bc' + str(uuid.uuid4()).replace('-', '')
+    REDIRECT_URI = 'http://douban.fm'
 
     def __init__(self):
         self.auth = None
@@ -102,8 +105,10 @@ class DoubanFMApi:
         rsp = requests.post('%s/service/auth2/token' % DoubanFMApi.TOKEN_HOST_URL, data={
             'username': email,
             'password': password,
+            'udid': DoubanFMApi.UUID,
             'client_id': DoubanFMApi.KEY,
             'client_secret': DoubanFMApi.SECRET,
+            'redirect_uri': DoubanFMApi.REDIRECT_URI,
             'grant_type': 'password',
             'apikey': DoubanFMApi.KEY,
         }).json()

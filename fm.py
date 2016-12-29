@@ -292,10 +292,10 @@ class UI:
 
     def next_song(self):
         # 单曲循环
-        if self.loop_mode == 0:
+        if self.loop_mode == 0 and self.playing_btn is not None:
             self._on_item_pressed(self.playing_btn)
         # 全部循环
-        elif self.loop_mode == 1:
+        elif self.loop_mode == 1 and self.playing_btn is not None:
             index = self.playing_btn.index + 1
             if index >= len(self.btns):
                 index = 0

@@ -6,7 +6,7 @@ import requests
 import urwid
 import uuid
 import random
-
+import getpass
 
 try:
     input = raw_input
@@ -229,7 +229,7 @@ class UI:
 
     def _setup_ui(self):
         email = input('豆瓣账户 (Email地址): ')
-        password = input('豆瓣密码: ')
+        password = getpass.getpass('豆瓣密码: ')
 
         api = DoubanFMApi()
         api.login(email, password)

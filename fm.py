@@ -215,6 +215,7 @@ class UI:
         self.loop_mode = 0
         self.next_song_alarm = None
         self.main = None
+        self.index = 0
 
         # 调色板
         self.palette = [
@@ -282,6 +283,7 @@ class UI:
     def stop_song(self):
         if self.playing_btn is not None:
             self.playing_btn.set_is_playing(False)
+            self.index = self.playing_btn.index
         self.playing_btn = None
 
         self.player.stop()
@@ -293,10 +295,18 @@ class UI:
     def next_song(self):
         # 单曲循环
         if self.loop_mode == 0:
-            self._on_item_pressed(self.playing_btn)
+            # 处于未播放状态时
+            if self.playing_btn is not None:
+                self._on_item_pressed(self.playing_btn)
+            else:
+                self._on_item_pressed(self.btns[self.index])
         # 全部循环
         elif self.loop_mode == 1:
-            index = self.playing_btn.index + 1
+            # 处于未播放状态时
+            if self.playing_btn is None:
+                index = self.index
+            else:
+                index = self.playing_btn.index + 1
             if index >= len(self.btns):
                 index = 0
             next_song_btn = self.btns[index]
